@@ -1,0 +1,114 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.7;
+
+import "@uniswap/v2-core/contracts/interfaces/IERC20.sol";
+import "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
+
+contract ArbitrageBot {
+    address public owner;
+    IUniswapV2Router02 public router1;  // Router 1
+    IUniswapV2Router02 public router2;  // Router 2
+    IERC20 public tokenA;               // Token A voor swap
+    IERC20 public tokenB;               // Token B voor swap
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Not the owner");
+        _;
+    }
+
+    constructor() {
+        require(msg.sender != address(0), "Invalid address");
+        owner = msg.sender;
+    }
+
+    // Functie om de routers in te stellen
+    function setRouters(address _router1, address _router2) external onlyOwner {
+        router1 = IUniswapV2Router02(_router1);
+        router2 = IUniswapV2Router02(_router2);
+    }
+
+    // Functie om tokenA toe te voegen voor de swap
+    function addToken(address _tokenA) external onlyOwner returns (bool success) {
+        tokenA = IERC20(_tokenA);  // Token A voor swap
+        return true;
+    }
+
+    // Functie om een trade uit te voeren
+    function executeTrade(uint256 amountIn) public onlyOwner returns (bool) {
+        // Approve Router1 voor tokenA
+        approveRouter1(amountIn);
+
+        // Declareer en initialiseert 'path' lokaal binnen de functie
+        address; // Pad array met twee elementen
+        path[0] = address(tokenA);                // Start token (tokenA)
+        path[1] = router1.WETH();                 // Eind token (WETH)
+
+        uint256 amountOutMin = (amountIn * 99) / 100; // Minimum output (99% van de waarde)
+
+        // Swap tokens op router1
+        swapTokens(router1, amountIn, path);
+
+        return true;
+    }
+
+    // Functie om een reversetrade uit te voeren
+    function executeTradeReverse(uint256 amountIn) public onlyOwner returns (bool) {
+        // Approve Router2 voor tokenB
+        approveRouter2(amountIn);
+
+        // Declareer en initialiseert 'path' lokaal binnen de functie
+        address; // Pad array met twee elementen
+        path[0] = router1.WETH();                 // Start token (WETH)
+        path[1] = address(tokenA);                // Eind token (tokenA)
+
+        uint256 amountOutMin = (amountIn * 99) / 100; // Minimum output (99% van de waarde)
+
+        // Swap tokens op router2
+        swapTokens(router2, amountIn, path);
+
+        return true;
+    }
+
+    // Functie om tokens op te nemen
+    function withdraw(address _tokenAddress) public onlyOwner returns (bool) {
+        uint256 bal = IERC20(_tokenAddress).balanceOf(address(this));
+        if (bal > 0) {
+            IERC20(_tokenAddress).transfer(owner, bal);
+            return true;
+        }
+        return false;
+    }
+
+    // Functie om goedkeuring te geven voor Router1
+    function approveRouter1(uint256 amountIn) private returns (bool) {
+        require(tokenA.allowance(address(this), address(router1)) >= amountIn, "Allowance insufficient");
+        tokenA.approve(address(router1), amountIn); // Zet goedkeuring voor het specifieke bedrag
+        return true;
+    }
+
+    // Functie om goedkeuring te geven voor Router2
+    function approveRouter2(uint256 amountIn) private returns (bool) {
+        require(tokenB.allowance(address(this), address(router2)) >= amountIn, "Allowance insufficient");
+        tokenB.approve(address(router2), amountIn); // Zet goedkeuring voor het specifieke bedrag
+        return true;
+    }
+
+    // Functie om tokens te wisselen op een specifieke router
+    function swapTokens(IUniswapV2Router02 _router, uint256 amountIn, address[] memory path) private {
+        _router.swapExactTokensForTokens(
+            amountIn,            // Hoeveelheid tokens in
+            0,                    // Minimaal te ontvangen (0 om de beste prijs te krijgen)
+            path,                 // Pad voor de swap
+            address(this),        // Ontvanger van de tokens
+            block.timestamp + 300 // Timestamp met max tijdslimiet van 5 minuten
+        );
+    }
+
+    // Functie om de balans van tokens op te vragen
+    function tokenBalance(address _tokenAddress) public view returns (uint256) {
+        return IERC20(_tokenAddress).balanceOf(address(this));
+    }
+
+    // Fallback functie om Ether te ontvangen
+    receive() external payable {}
+}
